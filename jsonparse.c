@@ -22,9 +22,9 @@ static const char lit_names[] = "true\0false\0null";
 static const unsigned char lit_ok[] = {0,0,0,1,0,0,0,0,0,2,0,0,0,0,3};
 static const unsigned char lit_val[] = {0, JSON_TRUE, JSON_FALSE, 0};
 
-static Q parse_value(const char *, const char **, Q);
+static object parse_value(const char *, const char **, object);
 
-static int is_json_atom(Q x)
+static int is_json_atom(object x)
 {
 	switch (x) {
 	case 0:			/* null  */
@@ -39,7 +39,7 @@ static int is_json_atom(Q x)
 }
 
 /* parser state symbol */
-static int is_state_atom(Q x)
+static int is_state_atom(object x)
 {
 	return x < 0x100 && !is_json_atom(x);
 }
@@ -86,29 +86,29 @@ static int convert_digits(const char *s, int *n, int i)
 	return i;
 }
 
-static void store_digits(const char *s, int *n, Q *p)
+static void store_digits(const char *s, int *n, object *p)
 {
 	*p = store_int(convert_digits(s, n, load_int(*p)));
 }
 
-static Q push_int(int i, Q st)
+static object push_int(int i, object st)
 {
 	return cons(store_int(i), st);
 }
 
-static Q push_zero(Q st)
+static object push_zero(object st)
 {
 	return push_int(0, st);
 }
 
-static void add(Q *p, int n)
+static void add(object *p, int n)
 {
 	*p = store_int(load_int(*p) + n);
 }
 
-static void frac_part(const char *s, int n, Q st)
+static void frac_part(const char *s, int n, object st)
 {
-	Q *p = third(st);
+	object *p = third(st);
 	int m = n;
 	if (p && type_of(*p) == TYP_INT) {
 		store_digits(s, &n, p);
@@ -120,9 +120,9 @@ static void frac_part(const char *s, int n, Q st)
 	}
 }
 
-static Q parse_digits(const char *s, int n, Q st)
+static object parse_digits(const char *s, int n, object st)
 {
-	Q *p = first(st);
+	object *p = first(st);
 	if (p) {
 		switch (*p) {
 		case '+':
@@ -154,9 +154,9 @@ static Q parse_digits(const char *s, int n, Q st)
 	return st;
 }
 
-static Q parse_number1(const char *s, const char **end, Q st)
+static object parse_number1(const char *s, const char **end, object st)
 {
-	Q *p = first(st), a = 0xE0;
+	object *p = first(st), a = 0xE0;
 	int n;
 	if (p && *p == 0xE0) {
 		switch (*s) {
@@ -180,9 +180,9 @@ static Q parse_number1(const char *s, const char **end, Q st)
 	return st;
 }
 
-static int pop_number(Q *st, int *e)
+static int pop_number(object *st, int *e)
 {
-	Q top = pop(st), *p;
+	object top = pop(st), *p;
 	int i;
 	/* exponent part */
 	switch (top) {
@@ -216,9 +216,9 @@ static int pop_number(Q *st, int *e)
 	return 0;
 }
 
-static Q parse_number(const char *s, const char **end, Q st)
+static object parse_number(const char *s, const char **end, object st)
 {
-	Q *p;
+	object *p;
 	int i, e = 0;
 	mpoint mp;
 	listdata_mark(mp);
@@ -273,26 +273,26 @@ static int convert_hex_quad(const char *s)
 	return u;
 }
 
-static Q append(Q x, Q y)
+static object append(object x, object y)
 {
 	return x ? concat(x, y) : y;
 }
 
-static Q append_str(Q x, const char *s)
+static object append_str(object x, const char *s)
 {
 	return *s ? append(x, store_str(s)) : x;
 }
 
-static Q append_uc(Q x, int uc)
+static object append_uc(object x, int uc)
 {
-	Q *p = first(last_tail(x, 1));
+	object *p = first(last_tail(x, 1));
 	if (p && type_of(*p) == TYP_STR && type_of(p[1]) == TYP_STR)
 		return cons(x, store_int(uc));
 	else
 		return append(x, store_int(uc));
 }
 
-static Q parse_chars(const char *s, const char **end, Q st, Q *p, int c)
+static object parse_chars(const char *s, const char **end, object st, object *p, int c)
 {
 	char buf[1024];
 	int i = 0, n;
@@ -348,9 +348,9 @@ static Q parse_chars(const char *s, const char **end, Q st, Q *p, int c)
 	return st;
 }
 
-static Q parse_string1(const char *s, const char **end, Q st, int c)
+static object parse_string1(const char *s, const char **end, object st, int c)
 {
-	Q *p = first(st);
+	object *p = first(st);
 	if (!p)
 		return 0;
 	st = parse_chars(s, &s, st, p, c);
@@ -366,21 +366,21 @@ static Q parse_string1(const char *s, const char **end, Q st, int c)
 	return st;
 }
 
-static Q parse_string(const char *s, const char **end, Q st)
+static object parse_string(const char *s, const char **end, object st)
 {
 	return parse_string1(s, end, cons(0, st), 0);
 }
 
-static Q parse_element(const char *s, const char **end, Q st)
+static object parse_element(const char *s, const char **end, object st)
 {
 	st = parse_value(s, &s, cons(',', st));
 	*end = skip_ws(s);
 	return st;
 }
 
-static Q reduce_array(Q st)
+static object reduce_array(object st)
 {
-	Q arr = st, *p = &arr, top;
+	object arr = st, *p = &arr, top;
 	while (is_cons(st)) {
 		if ((top = get_head(st)) == '[') {
 			*p = EMPTY_LIST;
@@ -395,7 +395,7 @@ static Q reduce_array(Q st)
 	return st == '[' ? reverse_list(arr) : 0;
 }
 
-static Q parse_array(const char *s, const char **end, Q st)
+static object parse_array(const char *s, const char **end, object st)
 {
 	s = skip_ws(s);
 	if (*s == ',') {
@@ -414,9 +414,9 @@ static Q parse_array(const char *s, const char **end, Q st)
 	return st;
 }
 
-static Q reduce_object(Q st)
+static object reduce_object(object st)
 {
-	Q obj = st, *p, *q = NULL, name;
+	object obj = st, *p, *q = NULL, name;
 	if (st == '{')
 		return EMPTY_DICT;
 	while ((p = first(st)) && !is_state_atom(*p) &&
@@ -442,7 +442,7 @@ static Q reduce_object(Q st)
 	return 0;
 }
 
-static Q parse_object(const char *s, const char **end, Q st, int n)
+static object parse_object(const char *s, const char **end, object st, int n)
 {
 	s = skip_ws(s);
 	if (n == 0) {
@@ -470,7 +470,7 @@ static Q parse_object(const char *s, const char **end, Q st, int n)
 	return st;
 }
 
-static Q parse_lit_name(const char *s, const char **end, Q top)
+static object parse_lit_name(const char *s, const char **end, object top)
 {
 	int i = top - LIT_NAME_0, j;
 	while (*s && *s == lit_names[i+1]) { i++; s++; }
@@ -481,9 +481,9 @@ static Q parse_lit_name(const char *s, const char **end, Q top)
 		return *s ? EMPTY_LIST : LIT_NAME_0 + i;
 }
 
-static Q parse_value(const char *s, const char **end, Q st)
+static object parse_value(const char *s, const char **end, object st)
 {
-	Q *p;
+	object *p;
 	s = skip_ws(s);
 	if (!*s) {
 		*end = s;
@@ -522,9 +522,9 @@ static Q parse_value(const char *s, const char **end, Q st)
 }
 
 /* continue parsing string */
-static Q parse_hex_quad(const char *s, const char **end, Q st)
+static object parse_hex_quad(const char *s, const char **end, object st)
 {
-	Q *p;
+	object *p;
 	char buf[8] = "\\u";
 	int n = copy_str(pop(&st), buf+2, 4), uc;
 	for (; n<4 && *s; n++)
@@ -546,7 +546,7 @@ static Q parse_hex_quad(const char *s, const char **end, Q st)
 	return parse_string1(s, end, st, 0);
 }
 
-static Q parse_esc(const char *s, const char **end, Q st)
+static object parse_esc(const char *s, const char **end, object st)
 {
 	int c;
 	if (*s == 'u')
@@ -555,9 +555,9 @@ static Q parse_esc(const char *s, const char **end, Q st)
 	return c ? parse_string1(s+1, end, st, c) : 0;
 }
 
-static Q parse(const char *s, Q st)
+static object parse(const char *s, object st)
 {
-	Q t, *p;
+	object t, *p;
 	int n;
 	while (*s) {
 		t = st;
@@ -589,14 +589,14 @@ static Q parse(const char *s, Q st)
 	return st;
 }
 
-Q json_parse_start(const char *s)
+object json_parse_start(const char *s)
 {
 	return json_parse(s, ' ');
 }
 
-Q json_parse(const char *s, Q st)
+object json_parse(const char *s, object st)
 {
-	Q *p = first(st);
+	object *p = first(st);
 	if (st == ' ') {
 		s = skip_ws(s);
 		return *s ? parse(s+1, *s) : st;
@@ -637,7 +637,7 @@ Q json_parse(const char *s, Q st)
 	return parse(s, st);
 }
 
-int json_parse_done(Q st)
+int json_parse_done(object st)
 {
 	switch (last_tail(st, 0)) {
 	case EMPTY_LIST:

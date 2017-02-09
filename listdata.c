@@ -7,19 +7,21 @@
 #include "listdata.h"
 #include "mstack.h"
 
-typedef Q cons_cell[2];
+#define T listdata_type
+
+typedef T cons_cell[2];
 
 #define MAX(a,b) ((a)>(b) ? (a) : (b))
 #define MAX3(a,b,c) MAX(a,MAX(b,c))
 
-/* Q structure (base tag offset)
+/* T structure (base tag offset)
 		msb           0  */
 
 #define OFFSET_BITS 10
-#define OFFSET_NUM ((Q)1 << OFFSET_BITS)
+#define OFFSET_NUM ((T)1 << OFFSET_BITS)
 #define OFFSET_MAX (OFFSET_NUM - 1)
 #define OFFSET(x) ((x) & OFFSET_MAX)
-#define TAGGED(x) ((Q)(x) << OFFSET_BITS)
+#define TAGGED(x) ((T)(x) << OFFSET_BITS)
 #define TAG_BITS  3
 #define TAG_MASK  TAGGED((1 << TAG_BITS) - 1)
 #define BASE_BIT  (OFFSET_BITS + TAG_BITS)
@@ -27,8 +29,8 @@ typedef Q cons_cell[2];
 #define BASE_MASK (~(TAG_MASK | OFFSET_MAX))
 #define BASE_MAX  BASE(BASE_MASK)
 
-#define INUM_MAX ((Q)(-1) >> (TAG_BITS+1))
-#define MSB    (~((Q)(-1) >> 1))
+#define INUM_MAX ((T)(-1) >> (TAG_BITS+1))
+#define MSB    (~((T)(-1) >> 1))
 
 enum ttag {
 	TAG_ATOM,	/* must by zero */
@@ -40,17 +42,17 @@ enum ttag {
 
 static struct mstack mstack;
 
-static Q str_top, int_top, cons_top;
+static T str_top, int_top, cons_top;
 static char	 *str_p;
 static int	 *int_p;
 static cons_cell *cons_p;
 
-static void *getmem(Q pointer)
+static void *getmem(T pointer)
 {
 	return mstack.mblocks[BASE(pointer)].mem;
 }
 
-void listdata_mark(Q *p)
+void listdata_mark(T *p)
 {
 	if (!mstack.mblocks) {
 		mstack_init(&mstack);
@@ -62,9 +64,9 @@ void listdata_mark(Q *p)
 	p[2] = cons_top;
 }
 
-void listdata_release(const Q *p)
+void listdata_release(const T *p)
 {
-	Q x = MAX3(p[0], p[1], p[2]),
+	T x = MAX3(p[0], p[1], p[2]),
 	  y = MAX3(str_top, int_top, cons_top);
 	if (!x)
 		mstack_free(&mstack, 0);
@@ -80,15 +82,15 @@ void listdata_release(const Q *p)
 	cons_p = (cons_cell *) load_cons(cons_top);
 }
 
-static Q tag_base(enum ttag tag, unsigned b)
+static T tag_base(enum ttag tag, unsigned b)
 {
-	return (tag | ((Q) b << TAG_BITS)) << OFFSET_BITS;
+	return (tag | ((T) b << TAG_BITS)) << OFFSET_BITS;
 }
 
-Q store_str(const char *s)
+T store_str(const char *s)
 {
 	unsigned b;
-	Q str;
+	T str;
 	if (str_p && OFFSET(str_top)+1 < OFFSET_MAX) {
 		str_top++;
 		str_p++;
@@ -109,7 +111,7 @@ Q store_str(const char *s)
 	return *s ? cons(str, store_str(s)) : str;
 }
 
-static Q push_int(int x)
+static T push_int(int x)
 {
 	unsigned b;
 	if (int_p && OFFSET(int_top) < OFFSET_MAX) {
@@ -126,20 +128,20 @@ static Q push_int(int x)
 	return int_top;
 }
 
-Q store_int(int x)
+T store_int(int x)
 {
 	return abs(x) > INUM_MAX ? push_int(x) :
-		TAGGED(TAG_INUM) | (((Q) x << TAG_BITS) & BASE_MASK)
-				 | ((Q) x & (OFFSET_MAX | MSB));
+		TAGGED(TAG_INUM) | (((T) x << TAG_BITS) & BASE_MASK)
+				 | ((T) x & (OFFSET_MAX | MSB));
 }
 
-static int extract_inum(Q x)
+static int extract_inum(T x)
 {
 	return (x & MSB) ? extract_inum(x ^ MSB) - (int)(INUM_MAX+1) :
 		((x & BASE_MASK) >> TAG_BITS) | OFFSET(x);
 }
 
-Q cons(Q head, Q tail)
+T cons(T head, T tail)
 {
 	unsigned b;
 	if (cons_p && OFFSET(cons_top) < OFFSET_MAX) {
@@ -157,12 +159,12 @@ Q cons(Q head, Q tail)
 	return cons_top;
 }
 
-Q cons_nil(Q head)
+T cons_nil(T head)
 {
 	return cons(head, EMPTY_LIST);
 }
 
-enum typ type_of(Q x)
+enum typ type_of(T x)
 {
 	switch (x & TAG_MASK) {
 	case TAGGED(TAG_CONS):
@@ -177,17 +179,17 @@ enum typ type_of(Q x)
 	}
 }
 
-static int tagged(Q x, enum ttag tag)
+static int tagged(T x, enum ttag tag)
 {
 	return (x & TAG_MASK) == TAGGED(tag);
 }
 
-char *load_str(Q str)
+char *load_str(T str)
 {
 	return (char *) getmem(str) + OFFSET(str);
 }
 
-int load_int(Q x)
+int load_int(T x)
 {
 	switch (x & TAG_MASK) {
 	case TAGGED(TAG_INT):
@@ -199,44 +201,44 @@ int load_int(Q x)
 	}
 }
 
-Q *load_cons(Q cons)
+T *load_cons(T cons)
 {
 	return &((cons_cell *) getmem(cons))[OFFSET(cons)][0];
 }
 
-Q get_head(Q cons) { return load_cons(cons)[0]; }
-Q get_tail(Q cons) { return load_cons(cons)[1]; }
+T get_head(T cons) { return load_cons(cons)[0]; }
+T get_tail(T cons) { return load_cons(cons)[1]; }
 
-int is_cons(Q x)
+int is_cons(T x)
 {
 	return tagged(x, TAG_CONS);
 }
 
-Q nth_tail(Q x, int n)
+T nth_tail(T x, int n)
 {
 	for (; n>0 && is_cons(x); n--)
 		x = get_tail(x);
 	return !n ? x : 0;
 }
 
-Q *nth_elem(Q x, int n)
+T *nth_elem(T x, int n)
 {
 	x = nth_tail(x, n);
 	return is_cons(x) ? load_cons(x) : NULL;
 }
 
-Q *first (Q x) { return nth_elem(x, 0); }
-Q *second(Q x) { return nth_elem(x, 1); }
-Q *third (Q x) { return nth_elem(x, 2); }
+T *first (T x) { return nth_elem(x, 0); }
+T *second(T x) { return nth_elem(x, 1); }
+T *third (T x) { return nth_elem(x, 2); }
 
-Q last_tail(Q x, int n)
+T last_tail(T x, int n)
 {
 	return is_cons(nth_tail(x, n)) ? last_tail(get_tail(x), n) : x;
 }
 
-Q pop(Q *p)
+T pop(T *p)
 {
-	Q elem = 0;
+	T elem = 0;
 	if (is_cons(*p)) {
 		elem = get_head(*p);
 		*p = get_tail(*p);
@@ -244,9 +246,9 @@ Q pop(Q *p)
 	return elem;
 }
 
-Q reverse_list(Q list)
+T reverse_list(T list)
 {
-	Q tail = EMPTY_LIST,
+	T tail = EMPTY_LIST,
 	  next, *p;
 	while (is_cons(list)) {
 		p = load_cons(list);
@@ -258,7 +260,7 @@ Q reverse_list(Q list)
 	return tail;
 }
 
-static const char *match_prefix(const char *s, Q prefix)
+static const char *match_prefix(const char *s, T prefix)
 {
 	const char *t;
 	if (!tagged(prefix, TAG_STR))
@@ -271,7 +273,7 @@ static const char *match_prefix(const char *s, Q prefix)
 	return s;
 }
 
-int equals_str(Q x, const char *s)
+int equals_str(T x, const char *s)
 {
 	for (; is_cons(x); x = get_tail(x)) {
 		s = match_prefix(s, get_head(x));
@@ -285,7 +287,7 @@ int equals_str(Q x, const char *s)
 /* Iterate over consed strings:
    for (s=str_begin(x, &x, NULL); s; s=str_next(s, &x, NULL)) ... */
 
-static char *str_begin(Q x, Q *p, Q *q)
+static char *str_begin(T x, T *p, T *q)
 {
 	char *s;
 	*p = x;
@@ -302,7 +304,7 @@ static char *str_begin(Q x, Q *p, Q *q)
 	return NULL;
 }
 
-static char *str_next(char *s, Q *p, Q *q)
+static char *str_next(char *s, T *p, T *q)
 {
 	if (s[1]) {
 		if (q)
@@ -314,7 +316,7 @@ static char *str_next(char *s, Q *p, Q *q)
 	return NULL;
 }
 
-int equals(Q x, Q y)
+int equals(T x, T y)
 {
 	char *s, *t;
 	if (x == y)
@@ -344,18 +346,18 @@ int equals(Q x, Q y)
 	return 0;
 }
 
-Q *dict_get(Q x, Q key)
+T *dict_get(T x, T key)
 {
-	Q *p = nth_elem(x, 1);
+	T *p = nth_elem(x, 1);
 	return !p || equals(key, get_head(x)) ? p : dict_get(p[1], key);
 }
 
-Q dict_set(Q x, Q key, Q val)
+T dict_set(T x, T key, T val)
 {
 	return cons(key, cons(val, x));
 }
 
-int copy_str(Q x, char *buf, int n)
+int copy_str(T x, char *buf, int n)
 {
 	char *s = str_begin(x, &x, NULL);
 	int i;
@@ -367,9 +369,9 @@ int copy_str(Q x, char *buf, int n)
 	return i;
 }
 
-Q split(Q x, int sep)
+T split(T x, int sep)
 {
-	Q y, z, *p;
+	T y, z, *p;
 	char *s = str_begin(x, &y, &z);
 	for (; s; s = str_next(s, &y, &z)) {
 		if (*s == sep) {
@@ -388,7 +390,7 @@ Q split(Q x, int sep)
 	return cons_nil(x);
 }
 
-Q concat(Q x, Q y)
+T concat(T x, T y)
 {
 	if (is_cons(x)) {
 		y = concat(get_tail(x), y);
