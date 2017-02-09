@@ -1,21 +1,27 @@
-/* Dynamically growing memory pools */
+/* Dynamically growing memory pool */
 
-typedef char str_cell[4];
-typedef unsigned cons_cell[2];
+#ifndef mstack_h
+#define mstack_h
 
-struct str_stack {
-	unsigned top, end;
-	str_cell *mem;
+struct mblock {
+	int freeable;
+	void *mem;
 };
 
-struct cons_stack {
-	unsigned top, end;
-	cons_cell *mem;
+struct mstack {
+	unsigned top, end, limit;
+	struct mblock *mblocks, mblocks_static[8];
 };
 
-unsigned push_str (struct str_stack *, const char *);
-unsigned push_cons(struct cons_stack *, unsigned head, unsigned tail);
+void mstack_init(struct mstack *);
 
-/* restore stack pointer: the next push will use memory at p */
-void restore_str (struct str_stack *, unsigned p);
-void restore_cons(struct cons_stack *, unsigned p);
+/* push memory block */
+unsigned mstack_push(struct mstack *, void *mem);
+
+/* allocate and push freeable memory block of n bytes */
+unsigned mstack_alloc(struct mstack *, unsigned n);
+
+/* free mblocks[p] and everything on top of it */
+void mstack_free(struct mstack *, unsigned p);
+
+#endif

@@ -1,125 +1,86 @@
-/* Dynamically growing memory pools
- * for strings and conses (as in Lisp)
- *
- * 2010-05-25 VN
+/* Dynamically growing memory pool
+ * 2010-07-21 VN
  */
 #include <stdlib.h>
-#include "listmem.h"
+#include <limits.h>
+#include "mstack.h"
 
-#define STACK_BOTTOM 1
-#define STACK_END_MIN 256
+#define NUM_OF(a) (sizeof(a) / sizeof(a[0]))
 
-static unsigned grow(unsigned end)
+void mstack_init(struct mstack *m)
 {
-	return end<<1 > end ? end<<1 : 0;
+	m->top = 0;
+	m->end = NUM_OF(m->mblocks_static);
+	m->limit = UINT_MAX / sizeof(struct mblock);
+	m->mblocks = m->mblocks_static;
+	m->mblocks[0].mem = NULL;
 }
 
-static str_cell *realloc_str(str_cell *mem, unsigned end)
+unsigned mstack_push(struct mstack *m, void *mem)
 {
-	return end ? realloc(mem, end*sizeof(str_cell)) : NULL;
-}
+	unsigned top = m->top + 1,
+		 end = m->end;
+	struct mblock *bs = m->mblocks;
+	int i = 0,
+	    n = NUM_OF(m->mblocks_static);
 
-static cons_cell *realloc_cons(cons_cell *mem, unsigned end)
-{
-	return end ? realloc(mem, end*sizeof(cons_cell)) : NULL;
-}
-
-static int copy_str(const char *s, str_cell t)
-{
-	int i;
-	for (i=0; i<sizeof(str_cell); i++) {
-		if (!(t[i] = s[i]))
-			return 1;
-	}
-	return 0;
-}
-
-unsigned push_str(struct str_stack *stack, const char *s)
-{
-	unsigned top = stack->top,
-		 end = stack->end,
-		 str;
-	str_cell *mem = stack->mem;
-
-	if (!mem) {
-		top = STACK_BOTTOM;
-		end = STACK_END_MIN;
-		mem = malloc(end*sizeof(str_cell));
-	}
-	str = top;
-	while (mem) {
-		stack->end = end;
-		stack->mem = mem;
-		for (; top < end; top++) {
-			if (copy_str(s, mem[top])) {
-				stack->top = top+1;
-				return str;
-			}
-			s += sizeof(str_cell);
+	if (top >= end) {
+		end <<= 1;
+		if (end <= top || end > m->limit)
+			return 0;
+		if (bs == m->mblocks_static)
+			bs = malloc(end * sizeof(struct mblock));
+		else {
+			bs = realloc(bs, end * sizeof(struct mblock));
+			i = n;
 		}
-		end = grow(end);
-		mem = realloc_str(mem, end);
+		if (!bs)
+			return 0;
+
+		for (; i < n; i++)
+			bs[i] = m->mblocks_static[i];
+
+		m->end = end;
+		m->mblocks = bs;
 	}
-	return 0;
-}
+	m->top = top;
 
-unsigned push_cons(struct cons_stack *stack, Q head, Q tail)
-{
-	unsigned top = stack->top,
-		 end = stack->end;
-	cons_cell *mem = stack->mem;
-
-	if (!mem) {
-		top = STACK_BOTTOM;
-		end = STACK_END_MIN;
-		mem = malloc(end*sizeof(cons_cell));
-	} else if (top >= end) {
-		end = grow(end);
-		mem = realloc_cons(mem, end);
-	}
-	if (!mem)
-		return 0;
-
-	stack->top = top+1;
-	stack->end = end;
-	stack->mem = mem;
-
-	mem[top][0] = head;
-	mem[top][1] = tail;
+	bs[top].freeable = 0;
+	bs[top].mem = mem;
 
 	return top;
 }
 
-void restore_str(struct str_stack *stack, unsigned p)
+unsigned mstack_alloc(struct mstack *m, unsigned n)
 {
-	unsigned top = stack->top,
-		 end = stack->end;
-	str_cell *mem = stack->mem;
+	void    *mem = malloc(n);
+	unsigned top = 0;
 	if (mem) {
-		if (top < end && top >= STACK_END_MIN) {
-			mem = realloc_str(mem, top);
-			if (mem) {
-				stack->end = top;
-				stack->mem = mem;
-			}
-		}
-		stack->top = p > STACK_BOTTOM ? p : STACK_BOTTOM;
+		top = mstack_push(m, mem);
+		if (top)
+			m->mblocks[top].freeable = 1;
+		else
+			free(mem);
 	}
+	return top;
 }
 
-void restore_cons(struct cons_stack *stack, unsigned p)
+void mstack_free(struct mstack *m, unsigned p)
 {
-	unsigned top = stack->top,
-		 end = stack->end;
-	cons_cell *mem = stack->mem;
-	if (mem) {
-		if (top < end && top >= STACK_END_MIN) {
-			mem = realloc_cons(mem, top);
-			if (mem) {
-				stack->end = top;
-				stack->mem = mem;
-			}
-		}
-		stack->top = p > STACK_BOTTOM ? p : STACK_BOTTOM;
+	unsigned top = m->top;
+	struct mblock *bs = m->mblocks;
+
+	for (; top && top >= p; top--) {
+		if (bs[top].freeable)
+			free(bs[top].mem);
+	}
+	m->top = top;
+
+	if (top < NUM_OF(m->mblocks_static) && bs != m->mblocks_static) {
+		for (; top; top--)
+			m->mblocks_static[top] = bs[top];
+		free(bs);
+		m->end = NUM_OF(m->mblocks_static);
+		m->mblocks = m->mblocks_static;
 	}
 }
